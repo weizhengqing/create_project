@@ -1,4 +1,4 @@
-# ABINIT Project Structure Generator
+# ABINIT Working Directory Generator
 
 An automated script to create organized directory structures for ABINIT computational materials science projects.
 
