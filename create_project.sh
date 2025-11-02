@@ -78,19 +78,19 @@ create_directory_structure() {
     
     # 主目录列表
     local directories=(
-        "00_metadata"
-        "01_structures/initial_structures"
-        "01_structures/optimized_structures" 
-        "01_structures/structure_templates"
-        "02_calculations"
-        "03_scripts"
-        "04_analysis/raw_data"
-        "04_analysis/processed_data"
-        "04_analysis/visualizations/plots"
-        "04_analysis/visualizations/figures"
-        "04_analysis/reports"
-        "05_documentation"
-        "06_backup"
+        "0_metadata"
+        "1_structures/initial_structures"
+        "1_structures/optimized_structures" 
+        "1_structures/structure_templates"
+        "2_calculations"
+        "3_scripts"
+        "4_analysis/raw_data"
+        "4_analysis/processed_data"
+        "4_analysis/visualizations/plots"
+        "4_analysis/visualizations/figures"
+        "4_analysis/reports"
+        "5_documentation"
+        "6_backup"
     )
     
     # 创建所有目录
@@ -110,7 +110,7 @@ create_metadata_files() {
     print_info "生成元数据文件..."
     
     # 1. 项目元数据 JSON 文件
-    cat > "${base_dir}/00_metadata/project_metadata.json" << EOF
+    cat > "${base_dir}/0_metadata/project_metadata.json" << EOF
 {
   "project_info": {
     "name": "${project_name}",
@@ -136,19 +136,19 @@ create_metadata_files() {
 EOF
 
     # 2. 计算注册表 CSV 文件
-    cat > "${base_dir}/00_metadata/calculation_registry.csv" << EOF
+    cat > "${base_dir}/0_metadata/calculation_registry.csv" << EOF
 ID,结构名称,体系,计算类型,状态,开始时间,完成时间,备注
 001,示例结构,示例体系,SCF,待开始,,,请填写实际数据
 EOF
 
     # 3. 结构数据库 CSV 文件
-    cat > "${base_dir}/00_metadata/structure_database.csv" << EOF
+    cat > "${base_dir}/0_metadata/structure_database.csv" << EOF
 结构ID,化学式,空间群,晶格参数a,晶格参数b,晶格参数c,文件路径,备注
-001,示例化学式,P1,1.0,1.0,1.0,01_structures/initial_structures/,请填写实际数据
+001,示例化学式,P1,1.0,1.0,1.0,1_structures/initial_structures/,请填写实际数据
 EOF
 
     # 4. 参数日志文件
-    cat > "${base_dir}/00_metadata/parameter_log.txt" << EOF
+    cat > "${base_dir}/0_metadata/parameter_log.txt" << EOF
 # ABINIT计算参数变更日志
 # 项目: ${project_name}
 # 创建日期: ${current_date}
@@ -162,7 +162,7 @@ EOF
 EOF
 
     # 5. 项目目标和任务管理文件
-    cat > "${base_dir}/00_metadata/project_objectives.md" << EOF
+    cat > "${base_dir}/0_metadata/project_objectives.md" << EOF
 # Project Objectives and Task Management
 
 ## Project Information
@@ -313,174 +313,421 @@ create_example_scripts() {
     
     print_info "创建示例脚本文件..."
     
-    # 1. 批量提交脚本示例
-    cat > "${base_dir}/03_scripts/job_management/job_submit.sh" << 'EOF'
-#!/bin/bash
-# ABINIT任务批量提交脚本示例
-# 使用方法: bash job_submit.sh [计算类型] [起始ID] [结束ID]
-
-CALC_TYPE=${1:-"scf"}
-START_ID=${2:-1}
-END_ID=${3:-1}
-
-echo "批量提交 ${CALC_TYPE} 计算任务 (ID: ${START_ID}-${END_ID})"
-
-for ((i=START_ID; i<=END_ID; i++)); do
-    # 假设目录格式为: job类型_编号，例如: scf_001, opt_002
-    JOB_DIR="../02_calculations/${CALC_TYPE}_$(printf "%03d" $i)"
-    if [ -d "$JOB_DIR" ]; then
-        echo "提交任务: $JOB_DIR"
-        # 在这里添加具体的任务提交命令
-        # 例如: sbatch ${JOB_DIR}/submit.slurm
-    else
-        echo "警告: 目录不存在 - $JOB_DIR"
-    fi
-done
-EOF
-
-    # 2. 数据提取脚本示例
-    cat > "${base_dir}/03_scripts/postprocessing/data_extraction.py" << 'EOF'
-#!/usr/bin/env python3
-"""
-ABINIT输出数据提取脚本示例
-用于从ABINIT输出文件中提取关键数据
-"""
+    # ABINIT输入配置脚本
+    cat > "${base_dir}/03_scripts/abinit_input_config.py" << 'EOF'
+import warnings
+warnings.filterwarnings("ignore")  # to get rid of deprecation warnings
 
 import os
-import re
-import pandas as pd
+import glob
+import argparse
 from pathlib import Path
+from abipy.abilab import AbinitInput
 
-def extract_energy_from_output(output_file):
-    """从ABINIT输出文件中提取能量数据"""
-    energies = []
+
+def get_pseudo_for_structure(structure_path, pseudo_dir):
+    """
+    根据结构文件自动获取对应元素的赝势文件
     
-    try:
-        with open(output_file, 'r') as f:
-            content = f.read()
-            
-        # 使用正则表达式提取总能量
-        pattern = r'Total energy \(eV\) = ([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)'
-        matches = re.findall(pattern, content)
+    Args:
+        structure_path: VASP 结构文件路径
+        pseudo_dir: 赝势文件目录
+    
+    Returns:
+        赝势文件路径列表
+    """
+    from pymatgen.io.vasp import Poscar
+    
+    # 读取结构文件获取元素列表
+    poscar = Poscar.from_file(structure_path)
+    elements = [str(element) for element in poscar.structure.composition.elements]
+    elements = sorted(set(elements))  # 去重并排序
+    
+    # 构建赝势文件路径列表
+    # 假设赝势文件命名格式为 Element.psp8
+    pseudo_files = []
+    for element in elements:
+        pseudo_file = os.path.join(pseudo_dir, f"{element}.psp8")
+        if os.path.exists(pseudo_file):
+            pseudo_files.append(pseudo_file)
+        else:
+            # 如果找不到 .psp8，尝试其他常见格式
+            for ext in ['.psp', '.xml', '.upf']:
+                alt_pseudo = os.path.join(pseudo_dir, f"{element}{ext}")
+                if os.path.exists(alt_pseudo):
+                    pseudo_files.append(alt_pseudo)
+                    break
+            else:
+                raise FileNotFoundError(f"Pseudopotential file not found for element {element} in {pseudo_dir}")
+    
+    return pseudo_files
+
+
+def create_mainsim_script(calc_dir):
+    """
+    创建 mainsim 集群的提交脚本
+    
+    Args:
+        calc_dir: 计算目录路径
+    """
+    script_content = """#!/bin/bash
+
+#SBATCH --nodes=1
+#SBATCH --ntasks=24
+#SBATCH --cpus-per-task=1
+#SBATCH --job-name=Job
+#SBATCH --output=job_%j.out
+#SBATCH --mail-user=zhengqing.wei@physik.tu-chemnitz.de
+#SBATCH --mail-type=START,END,FAIL,TIME_LIMIT
+#SBATCH --partition=cpu
+###SBATCH --nodelist=simep05
+###SBATCH --exclude=simep04
+#SBATCH --error=error
+
+module unload openmpi
+module load abinit/9.10.3/openmpi3-mkl
+mpirun abinit run.abi > log
+"""
+    
+    script_path = os.path.join(calc_dir, "mainsim.sh")
+    with open(script_path, 'w') as f:
+        f.write(script_content)
+    
+    # 添加可执行权限
+    os.chmod(script_path, 0o755)
+    print(f"  Created: mainsim.sh")
+
+
+def create_barnard_script(calc_dir):
+    """
+    创建 barnard 集群的提交脚本
+    
+    Args:
+        calc_dir: 计算目录路径
+    """
+    script_content = """#!/bin/bash
+
+#SBATCH --time=5-00:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=64
+#SBATCH --cpus-per-task=1
+#SBATCH --job-name=Job
+#SBATCH --output=job_%j.out
+#SBATCH --mail-user=zhengqing.wei@mailbox.tu-dresden.de
+#SBATCH --mail-type=START,END,FAIL,TIME_LIMIT
+#SBATCH --partition=barnard
+#SBATCH --account=p_structures
+###SBATCH --nodelist=simep05
+###SBATCH --exclude=simep04
+#SBATCH --error=error
+
+module load release/24.10
+module load GCC/13.2.0
+module load OpenMPI/4.1.6
+module load ABINIT/10.0.9
+
+mpirun abinit run.abi >> log
+"""
+    
+    script_path = os.path.join(calc_dir, "barnard.sh")
+    with open(script_path, 'w') as f:
+        f.write(script_content)
+    
+    # 添加可执行权限
+    os.chmod(script_path, 0o755)
+    print(f"  Created: barnard.sh")
+
+
+def create_abinit_input(structure_file, calc_dir, pseudo_dir):
+    """
+    为单个结构创建 ABINIT 输入文件
+    
+    Args:
+        structure_file: 结构文件路径
+        calc_dir: 计算目录路径
+        pseudo_dir: 赝势文件目录
+    """
+    from pymatgen.io.vasp import Poscar
+    from abipy.core.structure import Structure
+    
+    # 获取对应的赝势文件路径
+    pseudos = get_pseudo_for_structure(structure_file, pseudo_dir)
+    
+    # 创建 AbinitInput 对象
+    inp = AbinitInput(structure=structure_file, pseudos=pseudos)
+    
+    # 读取 abipy 生成的结构，获取元素类型顺序
+    abipy_structure = Structure.from_file(structure_file)
+    
+    # 获取元素类型列表（按照 abipy 内部的顺序）
+    # types_of_specie 返回的是按照 typat 顺序排列的元素
+    element_types = abipy_structure.types_of_specie
+    
+    # 生成赝势文件名列表（顺序与 znucl 对应）
+    pseudo_filenames = [f"{str(elem)}.psp8" for elem in element_types]
+    
+    # 设置基本参数
+    inp.set_vars(
+        # 基本设置
+        ecut=30,          # 平面波截断能量 (Ha)
+        nstep=300,        # SCF 最大步数
+        toldfe=1.0e-8,    # 总能量收敛容差
+        tolmxf=1.0e-5,    # 最大力收敛容差
         
-        if matches:
-            energies = [float(match) for match in matches]
-            
-    except Exception as e:
-        print(f"读取文件出错 {output_file}: {e}")
+        # SCF 设置
+        iscf=7,           # SCF 算法 (Pulay mixing)
+        npulayit=5,       # Pulay 混合历史数
         
-    return energies
+        # k-点设置
+        kptopt=1,         # k-点生成选项
+        kptrlatt=[[6, 0, 0], [0, 6, 0], [0, 0, 3]],  # k-点网格
+        
+        # 结构优化设置
+        optcell=2,        # 优化晶胞形状和体积
+        ionmov=2,         # 离子移动算法 (BFGS)
+        ntime=200,        # 结构优化最大步数
+        dilatmx=1.15,     # 最大晶格膨胀因子
+        ecutsm=0.5,       # 能量平滑参数
+        
+        # 占据数设置
+        occopt=7,         # 占据数选项 (Gaussian smearing)
+        tsmear=0.04,      # 展宽温度 (Ha)
+        
+        # 输出控制
+        prtwf=0,          # 不输出波函数
+        prtden=0,         # 不输出电荷密度
+        prtdos=0,         # 不输出态密度
+        
+        # 能带数
+        nband=44,         # 能带数量
+        
+        # 对称性
+        nsym=1,           # 对称性操作数量
+        
+        # 使用环境变量指定赝势目录
+        pp_dirpath="$PSEUDOS",
+        
+        # 明确指定赝势文件名（顺序与 znucl 一致）
+        pseudos=", ".join([f'"{pf}"' for pf in pseudo_filenames]),
+    )
+    
+    # 写入 run.abi 文件
+    output_file = os.path.join(calc_dir, "run.abi")
+    inp.write(filepath=output_file)
+    print(f"  Created: run.abi")
+
+
+def create_batch_submit_script(script_dir, calculations_dir, cluster_type):
+    """
+    创建批量提交脚本
+    
+    Args:
+        script_dir: 脚本目录路径
+        calculations_dir: 计算目录路径
+        cluster_type: 集群类型 ('mainsim', 'barnard', 或 'both')
+    """
+    # 根据集群类型确定要生成的脚本
+    scripts_to_create = []
+    
+    if cluster_type in ['mainsim', 'both']:
+        scripts_to_create.append(('mainsim', 'submit_all_mainsim.sh'))
+    
+    if cluster_type in ['barnard', 'both']:
+        scripts_to_create.append(('barnard', 'submit_all_barnard.sh'))
+    
+    for cluster, script_name in scripts_to_create:
+        script_content = f"""#!/bin/bash
+
+# 批量提交脚本 - {cluster.upper()} 集群
+# 生成时间: {os.popen('date').read().strip()}
+
+# 设置颜色输出
+GREEN='\\033[0;32m'
+RED='\\033[0;31m'
+YELLOW='\\033[1;33m'
+NC='\\033[0m' # No Color
+
+echo "========================================"
+echo "批量提交 ABINIT 任务到 {cluster.upper()} 集群"
+echo "========================================"
+echo ""
+
+# 获取脚本所在目录
+SCRIPT_DIR="$( cd "$( dirname "${{BASH_SOURCE[0]}}" )" && pwd )"
+
+# 获取计算目录的相对路径（相对于脚本目录）
+CALC_DIR="$SCRIPT_DIR/../2_calculations"
+
+# 计数器
+TOTAL=0
+SUCCESS=0
+FAILED=0
+
+# 遍历所有子目录
+for dir in "$CALC_DIR"/*/; do
+    if [ -d "$dir" ]; then
+        dirname=$(basename "$dir")
+        
+        # 检查是否存在提交脚本
+        if [ -f "${{dir}}{cluster}.sh" ]; then
+            echo -n "提交任务: $dirname ... "
+            
+            # 进入目录并提交任务
+            cd "$dir"
+            
+            # 提交任务并捕获输出
+            output=$(sbatch {cluster}.sh 2>&1)
+            exit_code=$?
+            
+            if [ $exit_code -eq 0 ]; then
+                # 提取作业ID
+                job_id=$(echo "$output" | grep -oP '(?<=Submitted batch job )\\d+' || echo "$output")
+                echo -e "${{GREEN}}✓ 成功${{NC}} (Job ID: $job_id)"
+                ((SUCCESS++))
+            else
+                echo -e "${{RED}}✗ 失败${{NC}} - $output"
+                ((FAILED++))
+            fi
+            
+            ((TOTAL++))
+            
+            # 返回脚本目录
+            cd - > /dev/null
+            
+            # 添加短暂延迟避免过快提交
+            sleep 0.5
+        else
+            echo -e "${{YELLOW}}⊗ 跳过${{NC}}: $dirname (未找到 {cluster}.sh)"
+        fi
+    fi
+done
+
+echo ""
+echo "========================================"
+echo "提交完成!"
+echo "总计: $TOTAL 个任务"
+echo -e "成功: ${{GREEN}}$SUCCESS${{NC}} 个"
+if [ $FAILED -gt 0 ]; then
+    echo -e "失败: ${{RED}}$FAILED${{NC}} 个"
+fi
+echo "========================================"
+echo ""
+echo "使用以下命令查看任务状态:"
+echo "  squeue -u $USER"
+echo ""
+echo "使用以下命令取消所有任务:"
+echo "  scancel -u $USER"
+"""
+        
+        script_path = os.path.join(script_dir, script_name)
+        with open(script_path, 'w') as f:
+            f.write(script_content)
+        
+        # 添加可执行权限
+        os.chmod(script_path, 0o755)
+        
+        print(f"  Created batch submit script: {script_name}")
+
 
 def main():
-    """主函数"""
-    calc_dir = Path("../../02_calculations")
-    results = []
+    """
+    主函数：遍历所有结构文件并创建计算目录和输入文件
+    """
+    # 设置参数解析
+    parser = argparse.ArgumentParser(description='Generate ABINIT input files and job scripts')
+    parser.add_argument('--cluster', type=str, choices=['mainsim', 'barnard', 'both'], 
+                        default='both', help='Target cluster (mainsim, barnard, or both)')
+    args = parser.parse_args()
     
-    print("正在扫描计算目录...")
+    # 获取当前脚本所在目录的父目录（项目根目录）
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(script_dir)
     
-    # 遍历所有计算目录
-    for job_dir in calc_dir.iterdir():
-        if job_dir.is_dir():
-            # 从目录名称中提取计算类型 (假设格式为: 类型_编号)
-            job_name = job_dir.name
-            calc_type = job_name.split('_')[0] if '_' in job_name else 'unknown'
+    # 定义路径
+    structures_dir = os.path.join(project_root, "1_structures", "initial_structures")
+    calculations_dir = os.path.join(project_root, "2_calculations")
+    
+    # 检查赝势目录
+    if "PSEUDOS" not in os.environ:
+        print("Error: PSEUDOS environment variable is not set!")
+        print("Please set it to your pseudopotential directory path.")
+        return
+    
+    pseudo_dir = os.environ["PSEUDOS"]
+    
+    # 确保计算目录存在
+    os.makedirs(calculations_dir, exist_ok=True)
+    
+    # 查找所有 VASP 文件
+    vasp_files = glob.glob(os.path.join(structures_dir, "*.vasp"))
+    
+    if not vasp_files:
+        print(f"No .vasp files found in {structures_dir}")
+        return
+    
+    print(f"Found {len(vasp_files)} structure file(s)")
+    print(f"Target cluster(s): {args.cluster}")
+    print("-" * 60)
+    
+    # 遍历每个结构文件
+    successful_count = 0
+    for vasp_file in vasp_files:
+        # 获取文件名（不含扩展名）
+        basename = os.path.splitext(os.path.basename(vasp_file))[0]
+        
+        print(f"\nProcessing: {basename}")
+        
+        # 创建对应的计算目录
+        calc_dir = os.path.join(calculations_dir, basename)
+        os.makedirs(calc_dir, exist_ok=True)
+        print(f"  Directory: {calc_dir}")
+        
+        try:
+            # 创建 ABINIT 输入文件
+            create_abinit_input(vasp_file, calc_dir, pseudo_dir)
             
-            output_file = job_dir / "output" / "abinit.out"
+            # 根据参数创建相应的提交脚本
+            if args.cluster in ['mainsim', 'both']:
+                create_mainsim_script(calc_dir)
             
-            if output_file.exists():
-                energies = extract_energy_from_output(output_file)
+            if args.cluster in ['barnard', 'both']:
+                create_barnard_script(calc_dir)
                 
-                if energies:
-                    results.append({
-                        'calc_type': calc_type,
-                        'job_id': job_name,
-                        'final_energy': energies[-1],
-                        'convergence_steps': len(energies),
-                        'file_path': str(output_file)
-                    })
+            print(f"  ✓ Successfully processed {basename}")
+            successful_count += 1
+            
+        except Exception as e:
+            print(f"  ✗ Error processing {basename}: {str(e)}")
     
-    # 保存结果到CSV文件
-    if results:
-        df = pd.DataFrame(results)
-        output_path = Path("../../04_analysis/raw_data/extracted_energies.csv")
-        df.to_csv(output_path, index=False)
-        print(f"数据提取完成，结果保存至: {output_path}")
-        print(f"共提取了 {len(results)} 个计算结果")
-    else:
-        print("未找到有效的计算结果")
+    print("\n" + "=" * 60)
+    print("All structures processed!")
+    print(f"Calculation directories created in: {calculations_dir}")
+    
+    # 如果有成功处理的文件，创建批量提交脚本
+    if successful_count > 0:
+        print("\n" + "-" * 60)
+        print("Creating batch submission scripts...")
+        create_batch_submit_script(script_dir, calculations_dir, args.cluster)
+        
+        print("\n" + "=" * 60)
+        print("Batch submission scripts created in: " + script_dir)
+        print("\nTo submit all jobs, run:")
+        
+        if args.cluster in ['mainsim', 'both']:
+            print(f"  bash {os.path.join(script_dir, 'submit_all_mainsim.sh')}")
+        
+        if args.cluster in ['barnard', 'both']:
+            print(f"  bash {os.path.join(script_dir, 'submit_all_barnard.sh')}")
+        
+        print("=" * 60)
+
 
 if __name__ == "__main__":
     main()
 EOF
-
-    # 3. 文件整理工具
-    cat > "${base_dir}/03_scripts/utilities/file_organizer.py" << 'EOF'
-#!/usr/bin/env python3
-"""
-文件整理工具
-用于检查和整理项目文件结构
-"""
-
-import os
-import shutil
-from pathlib import Path
-from datetime import datetime
-
-def check_directory_structure():
-    """检查目录结构完整性"""
-    required_dirs = [
-        "00_metadata",
-        "01_structures/raw_structures",
-        "01_structures/optimized_structures",
-        "01_structures/structure_templates",
-        "02_calculations",
-        "03_scripts",
-        "04_analysis",
-        "05_documentation",
-        "06_backup"
-    ]
     
-    missing_dirs = []
-    project_root = Path("../..")
-    
-    for dir_path in required_dirs:
-        full_path = project_root / dir_path
-        if not full_path.exists():
-            missing_dirs.append(dir_path)
-    
-    if missing_dirs:
-        print("缺失的目录:")
-        for dir_path in missing_dirs:
-            print(f"  - {dir_path}")
-        return False
-    else:
-        print("目录结构检查通过")
-        return True
-
-def organize_files():
-    """整理文件到正确的目录"""
-    print("文件整理功能待实现...")
-    # 在这里添加文件整理逻辑
-
-def backup_project():
-    """创建项目备份"""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_name = f"backup_{timestamp}"
-    
-    print(f"创建备份: {backup_name}")
-    # 在这里添加备份逻辑
-
-if __name__ == "__main__":
-    print("=== 项目文件整理工具 ===")
-    check_directory_structure()
-EOF
-
-    # 设置脚本执行权限
-    chmod +x "${base_dir}/03_scripts/job_management/job_submit.sh"
-    chmod +x "${base_dir}/03_scripts/postprocessing/data_extraction.py"
-    chmod +x "${base_dir}/03_scripts/utilities/file_organizer.py"
-    
-    print_success "示例脚本创建完成"
+    chmod +x "${base_dir}/03_scripts/abinit_input_config.py"
+    print_success "ABINIT输入配置脚本创建完成"
 }
 
 # 创建文档文件
@@ -489,6 +736,235 @@ create_documentation() {
     local project_name="$2"
     
     print_info "创建项目文档..."
+    
+    # ABINIT输入配置脚本使用说明
+    cat > "${base_dir}/05_documentation/abinit_input_config_README.md" << 'EOF'
+# ABINIT Input Configuration Script 使用说明
+
+## 功能概述
+
+`abinit_input_config.py` 脚本可以自动化处理 ABINIT 计算的准备工作，包括：
+
+1. 遍历 `01_structures/initial_structures` 中的所有 `.vasp` 结构文件
+2. 为每个结构在 `02_calculations` 中创建独立的计算目录
+3. 自动识别结构中的元素并匹配对应的赝势文件
+4. 生成 ABINIT 输入文件 `run.abi`
+5. 根据目标集群生成相应的作业提交脚本（mainsim.sh 或 barnard.sh）
+
+## 前置要求
+
+### 环境配置
+
+1. **安装必要的 Python 包：**
+   ```bash
+   pip install abipy pymatgen
+   ```
+
+2. **设置赝势目录环境变量：**
+   ```bash
+   # 在 ~/.zshrc 或 ~/.bashrc 中添加
+   export PSEUDOS="/path/to/your/pseudopotential/directory"
+   
+   # 使配置生效
+   source ~/.zshrc
+   ```
+
+### 目录结构准备
+
+确保你的项目目录结构如下：
+```
+project_root/
+├── 1_structures/
+│   └── initial_structures/    # 放置 .vasp 结构文件
+├── 2_calculations/            # 自动生成的计算目录
+└── 3_scripts/
+    └── abinit_input_config.py  # 本脚本
+```
+
+## 使用方法
+
+### 基本用法
+
+```bash
+cd /Users/zhengqingwei/Desktop/test_20251102/3_scripts
+python abinit_input_config.py
+```
+
+默认情况下，脚本会同时生成 mainsim 和 barnard 两种集群的提交脚本。
+
+### 指定目标集群
+
+**只生成 mainsim 集群脚本：**
+```bash
+python abinit_input_config.py --cluster mainsim
+```
+
+**只生成 barnard 集群脚本：**
+```bash
+python abinit_input_config.py --cluster barnard
+```
+
+**同时生成两种集群脚本（默认）：**
+```bash
+python abinit_input_config.py --cluster both
+```
+
+## 输出结果
+
+运行脚本后，每个结构文件会在 `2_calculations` 中生成一个独立目录，包含：
+
+### 文件列表
+
+1. **run.abi** - ABINIT 输入文件，包含所有计算参数
+2. **mainsim.sh** - MainSim 集群提交脚本（如果选择）
+3. **barnard.sh** - Barnard 集群提交脚本（如果选择）
+
+### 示例目录结构
+
+```
+2_calculations/
+├── al6zr2b-1/
+│   ├── run.abi
+│   ├── mainsim.sh
+│   └── barnard.sh
+├── structure2/
+│   ├── run.abi
+│   ├── mainsim.sh
+│   └── barnard.sh
+└── ...
+```
+
+## 批量提交作业
+
+脚本会自动生成批量提交脚本，可以一次性提交所有任务：
+
+### MainSim 集群
+
+```bash
+cd 3_scripts
+bash submit_all_mainsim.sh
+```
+
+### Barnard 集群
+
+```bash
+cd 3_scripts
+bash submit_all_barnard.sh
+```
+
+### 单个任务提交
+
+如果需要单独提交某个任务：
+
+**MainSim 集群：**
+```bash
+cd 2_calculations/structure_name
+sbatch mainsim.sh
+```
+
+**Barnard 集群：**
+```bash
+cd 2_calculations/structure_name
+sbatch barnard.sh
+```
+
+## 计算参数说明
+
+脚本中的 ABINIT 参数可以根据需要修改。当前使用的主要参数：
+
+| 参数 | 值 | 说明 |
+|------|-----|------|
+| ecut | 30 Ha | 平面波截断能量 |
+| nstep | 300 | SCF 最大步数 |
+| toldfe | 1.0e-8 | 总能量收敛容差 |
+| tolmxf | 1.0e-5 | 最大力收敛容差 |
+| optcell | 2 | 优化晶胞形状和体积 |
+| ionmov | 2 | BFGS 离子移动算法 |
+| ntime | 200 | 结构优化最大步数 |
+| kptrlatt | [6,6,3] | k-点网格 |
+
+如需修改参数，请编辑 `abinit_input_config.py` 中 `create_abinit_input()` 函数的参数部分。
+
+## 集群配置说明
+
+### MainSim 集群
+
+- 节点数：1
+- 任务数：24
+- 分区：cpu
+- ABINIT 版本：9.10.3
+
+### Barnard 集群
+
+- 节点数：1
+- 任务数：64
+- 分区：barnard
+- 账户：p_structures
+- ABINIT 版本：10.0.9
+- 最长运行时间：5天
+
+## 故障排除
+
+### 问题：找不到赝势文件
+
+**错误信息：** `Error: PSEUDOS environment variable is not set!`
+
+**解决方法：**
+```bash
+export PSEUDOS="/path/to/your/pseudopotentials"
+```
+
+### 问题：找不到 .vasp 文件
+
+**错误信息：** `No .vasp files found in ...`
+
+**解决方法：**
+- 确认结构文件已放置在 `1_structures/initial_structures/` 目录中
+- 确认文件扩展名为 `.vasp`
+
+### 问题：导入 abipy 或 pymatgen 失败
+
+**解决方法：**
+```bash
+pip install --upgrade abipy pymatgen
+```
+
+### 问题：赝势自动匹配失败
+
+**可能原因：**
+- 赝势目录中缺少对应元素的赝势文件
+- 赝势文件命名格式不符合 abipy 的要求
+
+**解决方法：**
+- 确保赝势文件命名格式为 `Element.psp8` 或类似格式
+- 检查 `$PSEUDOS` 目录中是否包含所需元素的赝势文件
+
+## 自定义和扩展
+
+### 修改计算参数
+
+在 `create_abinit_input()` 函数中修改 `AbinitInput()` 的参数。
+
+### 修改作业脚本
+
+在 `create_mainsim_script()` 或 `create_barnard_script()` 函数中修改脚本内容。
+
+### 添加其他集群支持
+
+参考现有的 `create_mainsim_script()` 函数，创建新的函数并在 `main()` 中调用。
+
+## 联系方式
+
+如有问题，请联系：
+- MainSim: zhengqing.wei@physik.tu-chemnitz.de
+- Barnard: zhengqing.wei@mailbox.tu-dresden.de
+
+## 版本历史
+
+- v1.0 (2025-11-02): 初始版本，支持自动生成 ABINIT 输入文件和集群提交脚本
+EOF
+
+    print_success "ABINIT输入配置文档创建完成"
     
     # 使用指南
     cat > "${base_dir}/05_documentation/usage_guide.md" << EOF
@@ -505,26 +981,26 @@ create_documentation() {
 ### 2. 添加结构文件
 将结构文件复制到相应目录：
 \`\`\`bash
-cp your_structure.cif 01_structures/initial_structures/
+cp your_structure.cif 1_structures/initial_structures/
 \`\`\`
 
 ### 3. 设置计算任务
 在计算目录中创建任务文件夹：
 \`\`\`bash
-mkdir -p 02_calculations/scf_YourMaterial_001
+mkdir -p 2_calculations/scf_YourMaterial_001
 \`\`\`
 
 ### 4. 运行计算
 使用提供的脚本提交任务：
 \`\`\`bash
-cd 03_scripts/job_management
+cd 3_scripts/job_management
 bash job_submit.sh scf 1 5
 \`\`\`
 
 ### 5. 分析结果
 运行数据提取脚本：
 \`\`\`bash
-cd 03_scripts/postprocessing
+cd 3_scripts/postprocessing
 python data_extraction.py
 \`\`\`
 
@@ -532,7 +1008,7 @@ python data_extraction.py
 
 ### 文件整理
 \`\`\`bash
-cd 03_scripts/utilities
+cd 3_scripts/utilities
 python file_organizer.py
 \`\`\`
 
@@ -576,18 +1052,18 @@ show_completion_info() {
     fi
     echo ""
     echo "2. 编辑项目元数据:"
-    echo "   编辑 00_metadata/project_metadata.json"
+    echo "   编辑 0_metadata/project_metadata.json"
     echo ""
     echo "3. 开始添加结构文件:"
-    echo "   复制结构文件到 01_structures/initial_structures/"
+    echo "   复制结构文件到 1_structures/initial_structures/"
     echo ""
     echo "4. 查看详细说明:"
-    echo "   cat 05_documentation/usage_guide.md"
+    echo "   cat 5_documentation/usage_guide.md"
     echo ""
     echo "文件结构预览:"
     echo "$(tree "$base_dir" -L 2 2>/dev/null || find "$base_dir" -type d | head -20 | sed 's/^/  /')"
     echo ""
-    print_warning "请记得填写 00_metadata/ 目录中的项目信息！"
+    print_warning "请记得填写 0_metadata/ 目录中的项目信息！"
 }
 
 # 验证路径是否存在
