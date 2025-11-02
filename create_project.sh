@@ -83,10 +83,7 @@ create_directory_structure() {
         "01_structures/optimized_structures" 
         "01_structures/structure_templates"
         "02_calculations"
-        "03_scripts/preprocessing"
-        "03_scripts/job_management"
-        "03_scripts/postprocessing"
-        "03_scripts/utilities"
+        "03_scripts"
         "04_analysis/raw_data"
         "04_analysis/processed_data"
         "04_analysis/visualizations/plots"
@@ -147,7 +144,7 @@ EOF
     # 3. 结构数据库 CSV 文件
     cat > "${base_dir}/00_metadata/structure_database.csv" << EOF
 结构ID,化学式,空间群,晶格参数a,晶格参数b,晶格参数c,文件路径,备注
-001,示例化学式,P1,1.0,1.0,1.0,01_structures/raw_structures/,请填写实际数据
+001,示例化学式,P1,1.0,1.0,1.0,01_structures/initial_structures/,请填写实际数据
 EOF
 
     # 4. 参数日志文件
@@ -493,94 +490,7 @@ create_documentation() {
     
     print_info "创建项目文档..."
     
-    # 1. 主README文件
-    cat > "${base_dir}/README.md" << EOF
-# ${project_name}
-
-使用ABINIT进行材料计算的研究项目
-
-## 项目结构
-
-\`\`\`
-${project_name}/
-├── 00_metadata/          # 项目元数据和管理文件
-├── 01_structures/        # 结构文件存储
-├── 02_calculations/      # 计算任务目录
-├── 03_scripts/          # 处理脚本集合
-├── 04_analysis/         # 数据分析结果
-├── 05_documentation/    # 项目文档
-├── 06_backup/          # 备份文件
-└── README.md           # 项目说明文件
-\`\`\`
-
-## 目录说明
-
-### 00_metadata/
-存放项目的核心管理文件：
-- \`project_metadata.json\`: 项目基本信息
-- \`calculation_registry.csv\`: 计算任务注册表
-- \`structure_database.csv\`: 结构文件数据库
-- \`parameter_log.txt\`: 参数变更记录
-
-### 01_structures/
-结构文件按类型分类存储：
-- \`raw_structures/\`: 原始结构文件
-- \`optimized_structures/\`: 优化后的结构文件
-- \`structure_templates/\`: 结构模板文件
-
-### 02_calculations/
-计算任务目录，可根据需要创建自己的子目录结构
-
-### 03_scripts/
-功能脚本分类存储：
-- \`preprocessing/\`: 预处理脚本
-- \`job_management/\`: 任务管理脚本
-- \`postprocessing/\`: 后处理脚本
-- \`utilities/\`: 工具脚本
-
-### 04_analysis/
-数据分析结果：
-- \`raw_data/\`: 原始数据
-- \`processed_data/\`: 处理后的数据
-- \`visualizations/\`: 可视化结果
-- \`reports/\`: 分析报告
-
-## 命名规范
-
-### 结构文件命名
-格式：\`{MaterialSystem}_{Structure}_{ID:03d}_{Version}.{ext}\`
-示例：\`TiO2_anatase_001_v1.cif\`
-
-### 计算任务命名
-格式：\`{System}_{CalcType}_{Parameters}_{YYYYMMDD}\`
-示例：\`TiO2_scf_k881_20250612\`
-
-### 脚本文件命名
-格式：\`{Function}_{Target}_{Version}.{ext}\`
-示例：\`extract_energy_abinit_v2.py\`
-
-## 使用指南
-
-1. **添加新结构**：将结构文件放入 \`01_structures/raw_structures/\`
-2. **设置计算**：在 \`02_calculations/\` 相应子目录创建计算任务
-3. **运行脚本**：使用 \`03_scripts/\` 中的脚本进行批量操作
-4. **分析数据**：将分析结果保存到 \`04_analysis/\`
-5. **更新记录**：及时更新 \`00_metadata/\` 中的管理文件
-
-## 备份建议
-
-- 定期备份重要数据到 \`06_backup/\`
-- 使用云存储服务同步关键文件
-- 保持多个备份副本
-
-## 联系信息
-
-- 项目负责人：请填写
-- 创建日期：$(date +%Y-%m-%d)
-- ABINIT版本：请填写
-EOF
-
-    # 2. 使用指南
+    # 使用指南
     cat > "${base_dir}/05_documentation/usage_guide.md" << EOF
 # ${project_name} 使用指南
 
@@ -595,7 +505,7 @@ EOF
 ### 2. 添加结构文件
 将结构文件复制到相应目录：
 \`\`\`bash
-cp your_structure.cif 01_structures/raw_structures/
+cp your_structure.cif 01_structures/initial_structures/
 \`\`\`
 
 ### 3. 设置计算任务
@@ -669,10 +579,10 @@ show_completion_info() {
     echo "   编辑 00_metadata/project_metadata.json"
     echo ""
     echo "3. 开始添加结构文件:"
-    echo "   复制结构文件到 01_structures/raw_structures/"
+    echo "   复制结构文件到 01_structures/initial_structures/"
     echo ""
     echo "4. 查看详细说明:"
-    echo "   cat README.md"
+    echo "   cat 05_documentation/usage_guide.md"
     echo ""
     echo "文件结构预览:"
     echo "$(tree "$base_dir" -L 2 2>/dev/null || find "$base_dir" -type d | head -20 | sed 's/^/  /')"
