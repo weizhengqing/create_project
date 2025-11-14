@@ -314,7 +314,7 @@ create_example_scripts() {
     print_info "创建示例脚本文件..."
     
     # ABINIT输入配置脚本
-    cat > "${base_dir}/03_scripts/abinit_input_config.py" << 'EOF'
+    cat > "${base_dir}/3_scripts/abinit_input_config.py" << 'EOF'
 import warnings
 warnings.filterwarnings("ignore")  # to get rid of deprecation warnings
 
@@ -726,7 +726,7 @@ if __name__ == "__main__":
     main()
 EOF
     
-    chmod +x "${base_dir}/03_scripts/abinit_input_config.py"
+    chmod +x "${base_dir}/3_scripts/abinit_input_config.py"
     print_success "ABINIT输入配置脚本创建完成"
 }
 
@@ -738,15 +738,15 @@ create_documentation() {
     print_info "创建项目文档..."
     
     # ABINIT输入配置脚本使用说明
-    cat > "${base_dir}/05_documentation/abinit_input_config_README.md" << 'EOF'
+    cat > "${base_dir}/5_documentation/abinit_input_config_README.md" << 'EOF'
 # ABINIT Input Configuration Script 使用说明
 
 ## 功能概述
 
 `abinit_input_config.py` 脚本可以自动化处理 ABINIT 计算的准备工作，包括：
 
-1. 遍历 `01_structures/initial_structures` 中的所有 `.vasp` 结构文件
-2. 为每个结构在 `02_calculations` 中创建独立的计算目录
+1. 遍历 `1_structures/initial_structures` 中的所有 `.vasp` 结构文件
+2. 为每个结构在 `2_calculations` 中创建独立的计算目录
 3. 自动识别结构中的元素并匹配对应的赝势文件
 4. 生成 ABINIT 输入文件 `run.abi`
 5. 根据目标集群生成相应的作业提交脚本（mainsim.sh 或 barnard.sh）
@@ -967,7 +967,7 @@ EOF
     print_success "ABINIT输入配置文档创建完成"
     
     # 使用指南
-    cat > "${base_dir}/05_documentation/usage_guide.md" << EOF
+    cat > "${base_dir}/5_documentation/usage_guide.md" << EOF
 # ${project_name} 使用指南
 
 ## 快速开始
