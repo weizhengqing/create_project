@@ -256,41 +256,50 @@ def create_abinit_input(structure_file, calc_dir, pseudo_dir):
     
     # 设置基本参数
     inp.set_vars(
-        # 基本设置
-        ecut=30,          # 平面波截断能量 (Ha)
-        nstep=300,        # SCF 最大步数
-        toldfe=1.0e-8,    # 总能量收敛容差
-        tolmxf=1.0e-5,    # 最大力收敛容差
+        # 晶格检查设置
+        chkprim=0,        # 不检查原胞是否为原始晶胞
+        chksymbreak=0,    # 关闭k点网格对称性检查
         
-        # SCF 设置
-        iscf=7,           # SCF 算法 (Pulay mixing)
-        npulayit=5,       # Pulay 混合历史数
+        # 平面波与k点取样
+        ecut=30,          # 截断能 (Ha)
+        kptopt=1,         # Γ中心网格
+        nshiftk=1,        # k点网格偏移数量
+        shiftk=[0.5, 0.5, 0.0],  # k点网格偏移
+        kptrlatt=[[6, 0, 0], [0, 6, 0], [0, 0, 2]],  # k-point 坐标矩阵
         
-        # k-点设置
-        kptopt=1,         # k-点生成选项
-        kptrlatt=[[6, 0, 0], [0, 6, 0], [0, 0, 3]],  # k-点网格
+        # 自洽场计算 (SCF cycle)
+        nstep=300,        # 最大迭代步数
+        toldfe=1.0e-7,    # 能量收敛标准 (Ha)
+        iscf=17,          # 线性混合 + Pulay 技术
+        npulayit=7,       # Pulay 迭代次数上限
         
-        # 结构优化设置
-        optcell=2,        # 优化晶胞形状和体积
-        ionmov=2,         # 离子移动算法 (BFGS)
-        ntime=200,        # 结构优化最大步数
-        dilatmx=1.15,     # 最大晶格膨胀因子
-        ecutsm=0.5,       # 能量平滑参数
+        # 介电混合参数 (适用于含真空体系)
+        iprcel=45,        # 预处理选项
+        diemix=0.5,       # 介电混合参数
+        diemac=1000.0,    # 宏观介电常数
+        dielng=5.0,       # 介电长度
         
-        # 占据数设置
-        occopt=7,         # 占据数选项 (Gaussian smearing)
-        tsmear=0.04,      # 展宽温度 (Ha)
+        # 电子结构参数设置
+        nband=82,         # 能带数目
+        occopt=7,         # 费米-狄拉克分布
+        tsmear=0.03,      # 电子温度 (Ha)
         
-        # 输出控制
+        # 几何优化
+        optcell=0,        # 固定晶格，不优化
+        ionmov=2,         # BFGS 或阻尼动力学方法
+        ntime=300,        # 最大步数
+        dilatmx=1.15,     # 步长限制
+        ecutsm=0.5,       # 光滑能量截断，改善力的连续性
+        
+        # 力收敛准则
+        tolmxf=0,         # 最大力门限关闭
+        tolmxde=1.0e-4,   # 总能变化门限 (Ha)
+        
+        # 输出与文件控制
         prtwf=0,          # 不输出波函数
-        prtden=0,         # 不输出电荷密度
-        prtdos=0,         # 不输出态密度
-        
-        # 能带数
-        nband=44,         # 能带数量
-        
-        # 对称性
-        nsym=1,           # 对称性操作数量
+        prtden=0,         # 不输出电子密度
+        prtdos=1,         # 输出态密度
+        enunit=2,         # 能量单位: eV
         
         # 使用环境变量指定赝势目录
         pp_dirpath="$PSEUDOS",
