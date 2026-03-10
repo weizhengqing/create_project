@@ -1,55 +1,67 @@
 #!/bin/zsh
 
 # ABINIT项目目录结构自动生成脚本
-# 使用方法: bash create_abinit_project.sh [项目名称] [目标路径]
-# 作者: 研究数据管理助手
-# 版本: 1.1
-# 日期: 2025-06-12
+# 版本: 2.2
 
-set -e  # 遇到错误立即退出
+set -e
 
-# 颜色定义，用于美化输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+CYAN='\033[0;36m'
+NC='\033[0m'
 
-# 打印带颜色的信息
-print_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
+print_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+print_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
 
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+OPT_RPT=false
+OPT_DOC=false
+OPT_REF=false
+OPT_PROC=false
+YES_ALL=false
+SCRIPT_NAME=$(basename "$0")   # zsh 函数内 $0 为函数名，提前保存脚本名
 
 # 显示使用说明
 show_usage() {
-    local script_name=$(basename "$0")
-    echo "ABINIT项目目录结构生成器"
+    local script_name="$SCRIPT_NAME"
+    echo "ABINIT项目目录结构生成器 v2.2"
     echo ""
     echo "使用方法:"
-    echo "  bash ${script_name} <项目名称> [目标路径]"
+    echo "  zsh ${script_name} <项目名称> [目标路径] [选项]"
+    echo ""
+    echo "选项:"
+    echo "  --with-rpt    创建 rpt/ (报告) 目录"
+    echo "  --with-doc    创建 doc/ (文档) 目录"
+    echo "  --with-ref    创建 ref/ (参考文献) 目录"
+    echo "  --with-proc   创建 proc/ (数据处理) 目录"
+    echo "  --yes-all     创建所有可选目录，跳过询问"
+    echo "  -h, --help    显示本帮助信息"
+    echo ""
+    echo "固定生成的目录:"
+    echo "  calc/         计算任务目录"
+    echo "  str/          结构文件目录"
+    echo "    ├── initial/    初始结构"
+    echo "    ├── template/   结构模板"
+    echo "    └── opt/        优化后结构"
+    echo "  dat/          原始数据目录"
+    echo "  util/         脚本工具目录"
+    echo "  viz/          可视化目录"
+    echo ""
+    echo "可选目录 (终端交互勾选):"
+    echo "  rpt/          报告目录"
+    echo "  doc/          文档目录"
+    echo "  ref/          参考文献目录"
+    echo "  proc/         数据处理目录"
+    echo "    ├── pre/      预处理"
+    echo "    └── post/     后处理"
     echo ""
     echo "示例:"
-    echo "  bash ${script_name} TiO2_Study                     # 在当前目录创建"
-    echo "  bash ${script_name} TiO2_Study /path/to/directory  # 在指定路径创建"
-    echo "  bash ${script_name} \"Graphene_Electronic_Properties\""
-    echo ""
-    echo "说明:"
-    echo "  - 项目名称不能包含特殊字符（/、\\、:、*、?、\"、<、>、|）"
-    echo "  - 如果项目名称包含空格，请用引号括起来"
-    echo "  - 如果不指定目标路径，脚本将在当前目录下创建项目文件夹"
-    echo "  - 如果指定目标路径，该路径必须已存在"
+    echo "  zsh ${script_name} TiO2_Study"
+    echo "  zsh ${script_name} TiO2_Study /path/to/dir --with-doc --with-rpt"
+    echo "  zsh ${script_name} TiO2_Study --yes-all"
 }
 
 # 验证项目名称
@@ -70,29 +82,182 @@ validate_project_name() {
     return 0
 }
 
+# ──────────────────────────────────────────────
+# 终端 TUI 勾选菜单（纯 zsh，兼容 macOS / Linux）
+# ↑↓ 移动光标  空格 勾选/取消  Enter 确认
+#
+# 修复说明：
+#   zsh 嵌套函数无法访问外层 local 变量（无闭包），
+#   需要内联绘制逻辑，避免嵌套函数。
+# ──────────────────────────────────────────────
+ask_via_terminal_menu() {
+    # zsh 数组从 1 开始
+    local opt1="rpt   实验报告 / 结果汇总"
+    local opt2="doc   项目文档 / 说明"
+    local opt3="ref   参考文献 / 资料"
+    local opt4="proc  数据处理 (含 pre/ post/ 子目录)"
+    local s1=0 s2=0 s3=0 s4=0   # 0=未选, 1=已选
+    local cur=1                  # 当前高亮行（1~4）
+    local nopt=4
+    # 菜单占行数：1(空行) + 1(标题) + 1(空行) + 4(选项) + 1(空行) = 8
+    local total_lines=8
+    local key k2 k3
+
+    # ── 内联绘制函数（取代闭包）──────────────────
+    # 用法：_tui_draw <cur> <s1> <s2> <s3> <s4> <redraw:0|1>
+    #   redraw=0 首次绘制；redraw=1 先上移 total_lines 再清屏重绘
+    _tui_draw() {
+        local _cur=$1 _s1=$2 _s2=$3 _s3=$4 _s4=$5 _redraw=$6
+        local _i _box
+
+        if (( _redraw )); then
+            printf "\033[%dA\033[J" "$total_lines"   # 上移 + 清屏
+        fi
+
+        echo ""
+        printf "  ${CYAN}可选目录 (↑↓/hjkl 移动  空格 勾选  Enter 确认)：${NC}\n"
+        echo ""
+
+        local _states=($_s1 $_s2 $_s3 $_s4)
+        local _opts=("$opt1" "$opt2" "$opt3" "$opt4")
+        for _i in 1 2 3 4; do
+            if (( _states[$_i] )); then
+                _box="${GREEN}[✓]${NC}"
+            else
+                _box="[ ]"
+            fi
+            if (( _i == _cur )); then
+                printf "  ${CYAN}▶${NC} %b %s\n" "$_box" "${_opts[$_i]}"
+            else
+                printf "    %b %s\n" "$_box" "${_opts[$_i]}"
+            fi
+        done
+        echo ""
+    }
+
+    # 首次绘制
+    _tui_draw $cur $s1 $s2 $s3 $s4 0
+
+    tput civis 2>/dev/null  # 隐藏光标
+
+    while true; do
+        IFS= read -rsk1 key
+        if [[ "$key" == $'\x1b' ]]; then
+            IFS= read -rsk1 -t0.1 k2
+            IFS= read -rsk1 -t0.1 k3
+            if [[ "$k2" == '[' ]]; then
+                case "$k3" in
+                    'A') (( cur-- )); (( cur < 1    )) && cur=$nopt ;;
+                    'B') (( cur++ )); (( cur > nopt )) && cur=1    ;;
+                esac
+                _tui_draw $cur $s1 $s2 $s3 $s4 1
+            fi
+        elif [[ "$key" == 'k' || "$key" == 'K' || "$key" == 'h' || "$key" == 'H' ]]; then
+            (( cur-- )); (( cur < 1    )) && cur=$nopt
+            _tui_draw $cur $s1 $s2 $s3 $s4 1
+        elif [[ "$key" == 'j' || "$key" == 'J' || "$key" == 'l' || "$key" == 'L' ]]; then
+            (( cur++ )); (( cur > nopt )) && cur=1
+            _tui_draw $cur $s1 $s2 $s3 $s4 1
+        elif [[ "$key" == ' ' ]]; then
+            case $cur in
+                1) (( s1 = s1 ? 0 : 1 )) ;;
+                2) (( s2 = s2 ? 0 : 1 )) ;;
+                3) (( s3 = s3 ? 0 : 1 )) ;;
+                4) (( s4 = s4 ? 0 : 1 )) ;;
+            esac
+            _tui_draw $cur $s1 $s2 $s3 $s4 1
+        elif [[ "$key" == $'\n' || "$key" == $'\r' || -z "$key" ]]; then
+            break
+        fi
+    done
+
+    tput cnorm 2>/dev/null  # 恢复光标
+    unfunction _tui_draw 2>/dev/null
+
+    (( s1 )) && OPT_RPT=true  || true
+    (( s2 )) && OPT_DOC=true  || true
+    (( s3 )) && OPT_REF=true  || true
+    (( s4 )) && OPT_PROC=true || true
+}
+
+# ──────────────────────────────────────────────
+# 询问可选目录
+# ──────────────────────────────────────────────
+ask_optional_dirs() {
+    if [ "$YES_ALL" = true ]; then
+        OPT_RPT=true; OPT_DOC=true; OPT_REF=true; OPT_PROC=true
+        print_info "--yes-all 已设置，将创建所有可选目录"
+        return
+    fi
+
+    if [ "$OPT_RPT" = true ] || [ "$OPT_DOC" = true ] || [ "$OPT_REF" = true ] || [ "$OPT_PROC" = true ]; then
+        print_info "已通过命令行参数指定可选目录，跳过询问"
+        return
+    fi
+
+    ask_via_terminal_menu
+
+    echo -e "${CYAN}已选择：${NC}"
+    [ "$OPT_RPT"  = true ] && echo "  ✓ rpt/"  || echo "  ✗ rpt/"
+    [ "$OPT_DOC"  = true ] && echo "  ✓ doc/"  || echo "  ✗ doc/"
+    [ "$OPT_REF"  = true ] && echo "  ✓ ref/"  || echo "  ✗ ref/"
+    [ "$OPT_PROC" = true ] && echo "  ✓ proc/" || echo "  ✗ proc/"
+    echo ""
+}
+
 # 创建目录结构
 create_directory_structure() {
     local base_dir="$1"
-    
-    print_info "创建目录结构..."
-    
-    # 主目录列表
-    local directories=(
-        "1_structures/initial_structures"
-        "1_structures/optimized_structures" 
-        "1_structures/structure_templates"
-        "2_calculations"
-        "3_scripts"
-        "4_analysis/raw_data"
-        "4_analysis/reports"
-        "5_documentation"
+
+    print_info "创建核心目录结构..."
+
+    local fixed_dirs=(
+        "calc"
+        "str/initial"
+        "str/template"
+        "str/opt"
+        "dat"
+        "util"
+        "viz"
     )
-    
-    # 创建所有目录
-    for dir in "${directories[@]}"; do
+
+    for dir in "${fixed_dirs[@]}"; do
         mkdir -p "${base_dir}/${dir}"
         print_success "创建目录: ${dir}"
     done
+
+    echo ""
+    print_info "处理可选目录..."
+
+    if [ "$OPT_RPT" = true ]; then
+        mkdir -p "${base_dir}/rpt"
+        print_success "创建目录: rpt"
+    else
+        print_warning "跳过目录:  rpt"
+    fi
+
+    if [ "$OPT_DOC" = true ]; then
+        mkdir -p "${base_dir}/doc"
+        print_success "创建目录: doc"
+    else
+        print_warning "跳过目录:  doc"
+    fi
+
+    if [ "$OPT_REF" = true ]; then
+        mkdir -p "${base_dir}/ref"
+        print_success "创建目录: ref"
+    else
+        print_warning "跳过目录:  ref"
+    fi
+
+    if [ "$OPT_PROC" = true ]; then
+        mkdir -p "${base_dir}/proc/pre"
+        mkdir -p "${base_dir}/proc/post"
+        print_success "创建目录: proc/pre"
+        print_success "创建目录: proc/post"
+    else
+        print_warning "跳过目录:  proc"
+    fi
 }
 
 # 创建示例脚本文件
@@ -101,8 +266,7 @@ create_example_scripts() {
     
     print_info "创建示例脚本文件..."
     
-    # 创建 abinit_input_config.py
-    cat > "${base_dir}/3_scripts/abinit_input_config.py" << 'EOF'
+    cat > "${base_dir}/util/abinit_input_config.py" << 'EOF'
 import warnings
 warnings.filterwarnings("ignore")  # to get rid of deprecation warnings
 
@@ -441,8 +605,8 @@ def main():
     project_root = os.path.dirname(script_dir)
     
     # 定义路径
-    structures_dir = os.path.join(project_root, "1_structures", "initial_structures")
-    calculations_dir = os.path.join(project_root, "2_calculations")
+    structures_dir   = os.path.join(project_root, "str", "initial")
+    calculations_dir = os.path.join(project_root, "calc")
     
     # 检查赝势目录
     if "PSEUDOS" not in os.environ:
@@ -523,10 +687,9 @@ if __name__ == "__main__":
     main()
 EOF
 
-    print_success "创建文件: abinit_input_config.py"
-    
-    # 创建 create_structure.py
-    cat > "${base_dir}/3_scripts/create_structure.py" << 'EOF'
+    print_success "创建文件: util/abinit_input_config.py"
+
+    cat > "${base_dir}/util/create_structure.py" << 'EOF'
 """创建Al(111)表面吸附不同位点氧原子的结构文件并用VESTA可视化"""
 
 import os
@@ -576,182 +739,133 @@ add_adsorbate(al_111_hcp, 'O', height=2.0, position='hcp')
 # 4. 保存结构文件
 # =============================================================================
 
-write('al_111_O_top.cif', al_111_top)
-write('al_111_O_bridge.cif', al_111_bridge)
-write('al_111_O_fcc.cif', al_111_fcc)
-write('al_111_O_hcp.cif', al_111_hcp)
+output_dir = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'str', 'initial')
+)
+os.makedirs(output_dir, exist_ok=True)
 
-
-# =============================================================================
-# 5. 可视化
-# =============================================================================
-
-# CIF文件列表
-cif_files = [
-    'al_111_O_top.cif',
-    'al_111_O_bridge.cif',
-    'al_111_O_fcc.cif',
-    'al_111_O_hcp.cif',
-]
-
-# 使用VESTA打开所有文件
-for cif_file in cif_files:
-    if os.path.exists(cif_file):
-        try:
-            # macOS上使用open命令打开VESTA
-            subprocess.Popen(['open', '-a', 'VESTA', cif_file])
-            print(f"已在VESTA中打开: {cif_file}")
-        except Exception as e:
-            print(f"打开 {cif_file} 失败: {e}")
-    else:
-        print(f"文件不存在: {cif_file}")
+for site, struct in [('ontop', al_111_top), ('bridge', al_111_bridge),
+                     ('fcc',   al_111_fcc),  ('hcp',   al_111_hcp)]:
+    name     = f'al_111_O_{site}'
+    cif_path = os.path.join(output_dir, f'{name}.cif')
+    write(cif_path, struct)
+    print(f'Saved: {cif_path}')
+    try:
+        subprocess.Popen(['open', '-a', 'VESTA', cif_path])
+        print(f'  Opened in VESTA: {name}.cif')
+    except Exception as e:
+        print(f'  VESTA open failed: {e}')
 EOF
 
-    print_success "创建文件: create_structure.py"
+    print_success "创建文件: util/create_structure.py"
 }
 
-# 创建文档文件
-create_documentation() {
-    local base_dir="$1"
-    local project_name="$2"
-    
-    print_info "创建文档目录..."
-    
-    # 仅创建文档目录，不生成任何文档文件
-    mkdir -p "${base_dir}/5_documentation"
-    
-    print_success "文档目录创建完成"
-}
-
-# 显示完成信息
 show_completion_info() {
     local base_dir="$1"
     local project_name="$2"
-    local target_path="$3"
-    
+
     echo ""
     echo "=============================================="
     print_success "项目目录创建完成！"
     echo "=============================================="
     echo ""
     echo "项目位置: $(realpath "$base_dir")"
-    echo "项目名称: $project_name"
     echo ""
-    echo "下一步操作："
-    echo "1. 进入项目目录:"
-    if [ "$target_path" = "." ]; then
-        echo "   cd \"$base_dir\""
+    echo "目录结构预览:"
+    if command -v tree &>/dev/null; then
+        tree "$base_dir" -L 2
     else
-        echo "   cd \"$base_dir\""
+        find "$base_dir" -type d | sort | sed "s|$(realpath "$base_dir")||" | sed 's/^/  /'
     fi
     echo ""
-    echo "2. 查看脚本文件:"
-    echo "   查看 3_scripts/ 目录中的Python脚本"
+    echo "下一步操作："
+    echo "  1. 进入项目目录:  cd \"$(realpath "$base_dir")\""
+    echo "  2. 添加结构文件:  复制 .vasp 文件到 str/initial/"
+    echo "  3. 生成计算输入:  python util/abinit_input_config.py"
     echo ""
-    echo "3. 开始添加结构文件:"
-    echo "   复制结构文件到 1_structures/initial_structures/"
-    echo ""
-    echo "文件结构预览:"
-    echo "$(tree "$base_dir" -L 2 2>/dev/null || find "$base_dir" -type d | head -20 | sed 's/^/  /')"
-    echo ""
-    print_success "项目创建完成,可以开始使用了!"
+    print_success "一切就绪，开始使用吧！"
 }
 
-# 验证路径是否存在
 validate_path() {
     local target_path="$1"
-    
-    # 检查路径是否存在
     if [ ! -d "$target_path" ]; then
         print_error "指定的路径 '$target_path' 不存在"
         return 1
     fi
-    
-    # 检查是否有写入权限
     if [ ! -w "$target_path" ]; then
         print_error "没有写入权限到路径 '$target_path'"
         return 1
     fi
-    
     return 0
 }
 
+# ──────────────────────────────────────────────
 # 主函数
+# ──────────────────────────────────────────────
 main() {
-    # 显示脚本标题
     echo "=============================================="
-    echo "    ABINIT 项目目录结构生成器 v1.1"
+    echo "    ABINIT 项目目录结构生成器 v2.2"
     echo "=============================================="
     echo ""
-    
-    # 检查参数
-    if [ $# -eq 0 ]; then
-        show_usage
-        exit 1
+
+    if [ $# -eq 0 ] || [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+        show_usage; exit 0
     fi
-    
-    if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
-        show_usage
-        exit 0
+
+    PROJECT_NAME=""
+    TARGET_PATH="."
+    POSITIONAL=()
+
+    for arg in "$@"; do
+        case $arg in
+            --with-rpt)  OPT_RPT=true ;;
+            --with-doc)  OPT_DOC=true ;;
+            --with-ref)  OPT_REF=true ;;
+            --with-proc) OPT_PROC=true ;;
+            --yes-all)   YES_ALL=true ;;
+            --*)
+                print_error "未知选项: $arg"
+                show_usage; exit 1 ;;
+            *) POSITIONAL+=("$arg") ;;
+        esac
+    done
+
+    PROJECT_NAME="${POSITIONAL[1]}"
+    [ ${#POSITIONAL[@]} -ge 2 ] && TARGET_PATH="${POSITIONAL[2]}"
+
+    if ! validate_project_name "$PROJECT_NAME"; then exit 1; fi
+
+    if [ "$TARGET_PATH" != "." ]; then
+        if ! validate_path "$TARGET_PATH"; then exit 1; fi
+        print_info "目标路径: $TARGET_PATH"
     fi
-    
-    # 获取项目名称
-    PROJECT_NAME="$1"
-    
-    # 验证项目名称
-    if ! validate_project_name "$PROJECT_NAME"; then
-        exit 1
-    fi
-    
-    # 检查是否提供了目标路径
-    TARGET_PATH="."  # 默认为当前目录
-    if [ $# -gt 1 ]; then
-        TARGET_PATH="$2"
-        # 验证目标路径
-        if ! validate_path "$TARGET_PATH"; then
-            exit 1
-        fi
-        print_info "将在路径 '$TARGET_PATH' 创建项目"
-    else
-        print_info "将在当前目录创建项目"
-    fi
-    
-    # 添加时间戳的项目目录名
+
+    ask_optional_dirs
+
     CURRENT_DATE=$(date +%Y%m%d)
-    # 处理路径，如果是当前目录"."，则不显示路径前缀
     if [ "$TARGET_PATH" = "." ]; then
         PROJECT_DIR="${PROJECT_NAME}_${CURRENT_DATE}"
     else
         PROJECT_DIR="${TARGET_PATH}/${PROJECT_NAME}_${CURRENT_DATE}"
     fi
-    
-    # 检查目录是否已存在
+
     if [ -d "$PROJECT_DIR" ]; then
         print_warning "目录 '$PROJECT_DIR' 已存在"
-        read -p "是否要覆盖现有目录? (y/N): " -n 1 -r
-        echo
+        read -p "是否覆盖? (y/N): " -n 1 -r; echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            print_info "操作取消"
-            exit 0
+            print_info "操作取消"; exit 0
         fi
         rm -rf "$PROJECT_DIR"
     fi
-    
-    print_info "开始创建项目: $PROJECT_NAME"
-    print_info "项目目录: $PROJECT_DIR"
+
+    print_info "创建项目: $PROJECT_NAME → $PROJECT_DIR"
     echo ""
-    
-    # 创建项目根目录
+
     mkdir -p "$PROJECT_DIR"
-    
-    # 执行创建步骤
     create_directory_structure "$PROJECT_DIR"
+    echo ""
     create_example_scripts "$PROJECT_DIR"
-    create_documentation "$PROJECT_DIR" "$PROJECT_NAME"
-    
-    # 显示完成信息
-    show_completion_info "$PROJECT_DIR" "$PROJECT_NAME" "$TARGET_PATH"
+    show_completion_info "$PROJECT_DIR" "$PROJECT_NAME"
 }
 
-# 脚本入口点
 main "$@"
