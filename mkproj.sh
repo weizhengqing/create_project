@@ -21,6 +21,7 @@ OPT_RPT=false
 OPT_DOC=false
 OPT_REF=false
 OPT_PROC=false
+OPT_OPT_TRAJ=false
 YES_ALL=false
 SCRIPT_NAME=$(basename "$0")   # zsh 函数内 $0 为函数名，提前保存脚本名
 
@@ -37,6 +38,7 @@ show_usage() {
     echo "  --with-doc    创建 doc/ (文档) 目录"
     echo "  --with-ref    创建 ref/ (参考文献) 目录"
     echo "  --with-proc   创建 proc/ (数据处理) 目录"
+    echo "  --with-opt-traj 创建 str/opt_traj/ (结构优化轨迹) 目录"
     echo "  --yes-all     创建所有可选目录，跳过询问"
     echo "  -h, --help    显示本帮助信息"
     echo ""
@@ -47,6 +49,7 @@ show_usage() {
     echo "    ├── template/   结构模板"
     echo "    └── opt/        优化后结构"
     echo "  dat/          原始数据目录"
+    echo "  log/          日志目录"
     echo "  util/         脚本工具目录"
     echo "  viz/          可视化目录"
     echo ""
@@ -57,6 +60,7 @@ show_usage() {
     echo "  proc/         数据处理目录"
     echo "    ├── pre/      预处理"
     echo "    └── post/     后处理"
+    echo "  str/opt_traj/ 结构优化轨迹"
     echo ""
     echo "示例:"
     echo "  zsh ${script_name} TiO2_Study"
@@ -96,18 +100,19 @@ ask_via_terminal_menu() {
     local opt2="doc   项目文档 / 说明"
     local opt3="ref   参考文献 / 资料"
     local opt4="proc  数据处理 (含 pre/ post/ 子目录)"
-    local s1=0 s2=0 s3=0 s4=0   # 0=未选, 1=已选
-    local cur=1                  # 当前高亮行（1~4）
-    local nopt=4
-    # 菜单占行数：1(空行) + 1(标题) + 1(空行) + 4(选项) + 1(空行) = 8
-    local total_lines=8
+    local opt5="opt_traj 结构优化轨迹 (于 str/ 目录内)"
+    local s1=0 s2=0 s3=0 s4=0 s5=0   # 0=未选, 1=已选
+    local cur=1                  # 当前高亮行（1~5）
+    local nopt=5
+    # 菜单占行数：1(空行) + 1(标题) + 1(空行) + 5(选项) + 1(空行) = 9
+    local total_lines=9
     local key k2 k3
 
     # ── 内联绘制函数（取代闭包）──────────────────
-    # 用法：_tui_draw <cur> <s1> <s2> <s3> <s4> <redraw:0|1>
+    # 用法：_tui_draw <cur> <s1> <s2> <s3> <s4> <s5> <redraw:0|1>
     #   redraw=0 首次绘制；redraw=1 先上移 total_lines 再清屏重绘
     _tui_draw() {
-        local _cur=$1 _s1=$2 _s2=$3 _s3=$4 _s4=$5 _redraw=$6
+        local _cur=$1 _s1=$2 _s2=$3 _s3=$4 _s4=$5 _s5=$6 _redraw=$7
         local _i _box
 
         if (( _redraw )); then
@@ -118,9 +123,9 @@ ask_via_terminal_menu() {
         printf "  ${CYAN}可选目录 (↑↓/hjkl 移动  空格 勾选  Enter 确认)：${NC}\n"
         echo ""
 
-        local _states=($_s1 $_s2 $_s3 $_s4)
-        local _opts=("$opt1" "$opt2" "$opt3" "$opt4")
-        for _i in 1 2 3 4; do
+        local _states=($_s1 $_s2 $_s3 $_s4 $_s5)
+        local _opts=("$opt1" "$opt2" "$opt3" "$opt4" "$opt5")
+        for _i in 1 2 3 4 5; do
             if (( _states[$_i] )); then
                 _box="${GREEN}[✓]${NC}"
             else
@@ -136,7 +141,7 @@ ask_via_terminal_menu() {
     }
 
     # 首次绘制
-    _tui_draw $cur $s1 $s2 $s3 $s4 0
+    _tui_draw $cur $s1 $s2 $s3 $s4 $s5 0
 
     tput civis 2>/dev/null  # 隐藏光标
 
@@ -150,22 +155,23 @@ ask_via_terminal_menu() {
                     'A') (( cur-- )); (( cur < 1    )) && cur=$nopt ;;
                     'B') (( cur++ )); (( cur > nopt )) && cur=1    ;;
                 esac
-                _tui_draw $cur $s1 $s2 $s3 $s4 1
+                _tui_draw $cur $s1 $s2 $s3 $s4 $s5 1
             fi
         elif [[ "$key" == 'k' || "$key" == 'K' || "$key" == 'h' || "$key" == 'H' ]]; then
             (( cur-- )); (( cur < 1    )) && cur=$nopt
-            _tui_draw $cur $s1 $s2 $s3 $s4 1
+            _tui_draw $cur $s1 $s2 $s3 $s4 $s5 1
         elif [[ "$key" == 'j' || "$key" == 'J' || "$key" == 'l' || "$key" == 'L' ]]; then
             (( cur++ )); (( cur > nopt )) && cur=1
-            _tui_draw $cur $s1 $s2 $s3 $s4 1
+            _tui_draw $cur $s1 $s2 $s3 $s4 $s5 1
         elif [[ "$key" == ' ' ]]; then
             case $cur in
                 1) (( s1 = s1 ? 0 : 1 )) ;;
                 2) (( s2 = s2 ? 0 : 1 )) ;;
                 3) (( s3 = s3 ? 0 : 1 )) ;;
                 4) (( s4 = s4 ? 0 : 1 )) ;;
+                5) (( s5 = s5 ? 0 : 1 )) ;;
             esac
-            _tui_draw $cur $s1 $s2 $s3 $s4 1
+            _tui_draw $cur $s1 $s2 $s3 $s4 $s5 1
         elif [[ "$key" == $'\n' || "$key" == $'\r' || -z "$key" ]]; then
             break
         fi
@@ -178,6 +184,7 @@ ask_via_terminal_menu() {
     (( s2 )) && OPT_DOC=true  || true
     (( s3 )) && OPT_REF=true  || true
     (( s4 )) && OPT_PROC=true || true
+    (( s5 )) && OPT_OPT_TRAJ=true || true
 }
 
 # ──────────────────────────────────────────────
@@ -185,12 +192,12 @@ ask_via_terminal_menu() {
 # ──────────────────────────────────────────────
 ask_optional_dirs() {
     if [ "$YES_ALL" = true ]; then
-        OPT_RPT=true; OPT_DOC=true; OPT_REF=true; OPT_PROC=true
+        OPT_RPT=true; OPT_DOC=true; OPT_REF=true; OPT_PROC=true; OPT_OPT_TRAJ=true
         print_info "--yes-all 已设置，将创建所有可选目录"
         return
     fi
 
-    if [ "$OPT_RPT" = true ] || [ "$OPT_DOC" = true ] || [ "$OPT_REF" = true ] || [ "$OPT_PROC" = true ]; then
+    if [ "$OPT_RPT" = true ] || [ "$OPT_DOC" = true ] || [ "$OPT_REF" = true ] || [ "$OPT_PROC" = true ] || [ "$OPT_OPT_TRAJ" = true ]; then
         print_info "已通过命令行参数指定可选目录，跳过询问"
         return
     fi
@@ -202,6 +209,7 @@ ask_optional_dirs() {
     [ "$OPT_DOC"  = true ] && echo "  ✓ doc/"  || echo "  ✗ doc/"
     [ "$OPT_REF"  = true ] && echo "  ✓ ref/"  || echo "  ✗ ref/"
     [ "$OPT_PROC" = true ] && echo "  ✓ proc/" || echo "  ✗ proc/"
+    [ "$OPT_OPT_TRAJ" = true ] && echo "  ✓ str/opt_traj/" || echo "  ✗ str/opt_traj/"
     echo ""
 }
 
@@ -217,6 +225,7 @@ create_directory_structure() {
         "str/template"
         "str/opt"
         "dat"
+        "log"
         "util"
         "viz"
     )
@@ -257,6 +266,13 @@ create_directory_structure() {
         print_success "创建目录: proc/post"
     else
         print_warning "跳过目录:  proc"
+    fi
+
+    if [ "$OPT_OPT_TRAJ" = true ]; then
+        mkdir -p "${base_dir}/str/opt_traj"
+        print_success "创建目录: str/opt_traj"
+    else
+        print_warning "跳过目录:  str/opt_traj"
     fi
 }
 
@@ -822,6 +838,7 @@ main() {
             --with-doc)  OPT_DOC=true ;;
             --with-ref)  OPT_REF=true ;;
             --with-proc) OPT_PROC=true ;;
+            --with-opt-traj) OPT_OPT_TRAJ=true ;;
             --yes-all)   YES_ALL=true ;;
             --*)
                 print_error "未知选项: $arg"
