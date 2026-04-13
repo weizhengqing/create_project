@@ -830,7 +830,8 @@ main() {
 
     PROJECT_NAME=""
     TARGET_PATH="."
-    POSITIONAL=()
+    FIRST_POS=""
+    SECOND_POS=""
 
     for arg in "$@"; do
         case $arg in
@@ -843,12 +844,18 @@ main() {
             --*)
                 print_error "未知选项: $arg"
                 show_usage; exit 1 ;;
-            *) POSITIONAL+=("$arg") ;;
+            *)
+                if [ -z "$FIRST_POS" ]; then
+                    FIRST_POS="$arg"
+                elif [ -z "$SECOND_POS" ]; then
+                    SECOND_POS="$arg"
+                fi
+                ;;
         esac
     done
 
-    PROJECT_NAME="${POSITIONAL[1]}"
-    [ ${#POSITIONAL[@]} -ge 2 ] && TARGET_PATH="${POSITIONAL[2]}"
+    PROJECT_NAME="$FIRST_POS"
+    [ -n "$SECOND_POS" ] && TARGET_PATH="$SECOND_POS"
 
     if ! validate_project_name "$PROJECT_NAME"; then exit 1; fi
 
